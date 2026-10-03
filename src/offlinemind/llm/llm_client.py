@@ -149,12 +149,14 @@ class LLMService:
 
         # Format natural text based on attribute and entity
         if fact.attribute.lower() in ("name", "title"):
-            if "college" in fact.entity.lower() or "college" in q_lower:
+            if fact.entity.lower() in ("user", "self", "person"):
+                main_text = f"Your name is **{fact.value}**."
+            elif fact.entity.lower() in ("college", "university", "school", "institution"):
                 main_text = f"Your college name is **{fact.value}**."
-            elif "university" in fact.entity.lower() or "university" in q_lower:
-                main_text = f"Your university name is **{fact.value}**."
             else:
                 main_text = f"The {fact.attribute} of {fact.entity} is **{fact.value}**."
+        elif fact.attribute.lower() in ("capital", "capital_city"):
+            main_text = f"The capital of {fact.entity} is **{fact.value}**."
         elif fact.attribute.lower() in ("location", "city", "address"):
             main_text = f"The {fact.attribute} of {fact.entity} is **{fact.value}**."
         elif fact.attribute.lower() in ("major", "degree"):

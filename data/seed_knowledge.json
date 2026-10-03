@@ -29,6 +29,15 @@
     },
     {
       "entity": "User",
+      "attribute": "name",
+      "value": "Sanket",
+      "category": "personal",
+      "source": "User Profile",
+      "source_priority": 95,
+      "confidence": 1.0
+    },
+    {
+      "entity": "User",
       "attribute": "major",
       "value": "Computer Science and AI",
       "category": "academic",
@@ -43,6 +52,33 @@
       "category": "academic",
       "source": "Student Portal",
       "source_priority": 85,
+      "confidence": 1.0
+    },
+    {
+      "entity": "India",
+      "attribute": "capital",
+      "value": "New Delhi",
+      "category": "geography",
+      "source": "World Factbook",
+      "source_priority": 90,
+      "confidence": 1.0
+    },
+    {
+      "entity": "India",
+      "attribute": "currency",
+      "value": "Indian Rupee (INR)",
+      "category": "economy",
+      "source": "Reserve Bank of India",
+      "source_priority": 90,
+      "confidence": 1.0
+    },
+    {
+      "entity": "Python",
+      "attribute": "creator",
+      "value": "Guido van Rossum",
+      "category": "technology",
+      "source": "Python Software Foundation",
+      "source_priority": 90,
       "confidence": 1.0
     },
     {

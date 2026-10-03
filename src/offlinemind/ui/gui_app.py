@@ -130,6 +130,20 @@ class OfflineMindGUI(tk.Tk):
         )
         btn_review.pack(side="left", padx=6)
 
+        btn_add = tk.Button(
+            toolbar, text="➕ Add Fact", bg="#a6e3a1", fg="#11111b",
+            font=("Segoe UI", 9, "bold"), activebackground="#94e2d5",
+            command=self._show_add_fact_window, relief="flat", padx=10, pady=4
+        )
+        btn_add.pack(side="left", padx=6)
+
+        btn_import = tk.Button(
+            toolbar, text="📥 Import JSON", bg="#f9e2af", fg="#11111b",
+            font=("Segoe UI", 9, "bold"), activebackground="#f5e0dc",
+            command=self._show_import_window, relief="flat", padx=10, pady=4
+        )
+        btn_import.pack(side="left", padx=6)
+
         # 3. Main Chat History
         chat_frame = ttk.Frame(self, style="TFrame")
         chat_frame.pack(fill="both", expand=True, padx=14, pady=0)
@@ -347,6 +361,143 @@ class OfflineMindGUI(tk.Tk):
 
         for it in items:
             tree.insert("", "end", values=(it.id, it.entity, it.attribute, it.current_value, it.incoming_value, it.conflict_reason))
+
+    def _show_add_fact_window(self):
+        """Displays a dialog allowing the user to add or update facts manually."""
+        win = tk.Toplevel(self)
+        win.title("➕ Add Verified Fact")
+        win.geometry("460x420")
+        win.configure(bg="#181825")
+        win.resizable(False, False)
+
+        tk.Label(win, text="Add New Knowledge Fact", bg="#181825", fg="#89b4fa", font=("Segoe UI", 12, "bold")).pack(pady=(16, 12))
+
+        form_frame = tk.Frame(win, bg="#181825")
+        form_frame.pack(fill="x", padx=24)
+
+        fields = [
+            ("Entity (e.g. User, India, College):", "entity_entry"),
+            ("Attribute (e.g. name, capital, location):", "attr_entry"),
+            ("Value (e.g. Sanket, New Delhi):", "val_entry"),
+            ("Source (e.g. User Profile, Manual Entry):", "source_entry"),
+            ("Category (e.g. personal, geography, education):", "cat_entry"),
+        ]
+
+        entries = {}
+        for label_text, key in fields:
+            lbl = tk.Label(form_frame, text=label_text, bg="#181825", fg="#cdd6f4", font=("Segoe UI", 9), anchor="w")
+            lbl.pack(fill="x", pady=(4, 1))
+            ent = tk.Entry(form_frame, bg="#313244", fg="#cdd6f4", insertbackground="#cdd6f4", relief="flat", font=("Segoe UI", 10))
+            ent.pack(fill="x", ipady=3)
+            entries[key] = ent
+
+        entries["source_entry"].insert(0, "User Manual Entry")
+        entries["cat_entry"].insert(0, "general")
+
+        def save_fact():
+            entity = entries["entity_entry"].get().strip()
+            attr = entries["attr_entry"].get().strip()
+            val = entries["val_entry"].get().strip()
+            source = entries["source_entry"].get().strip() or "User Manual Entry"
+            cat = entries["cat_entry"].get().strip() or "general"
+
+            if not entity or not attr or not val:
+                messagebox.showerror("Validation Error", "Entity, Attribute, and Value are all required.", parent=win)
+                return
+
+            incoming = Fact(
+                entity=entity,
+                attribute=attr,
+                value=val,
+                source=source,
+                source_priority=80,
+                category=cat,
+                confidence=1.0,
+            )
+            action, reason = self.ke.apply_incoming_fact(incoming)
+            self._update_status_badges()
+            self._append_assistant_message(
+                f"✅ Fact saved: **{entity}**'s {attr} is **{val}**.\n(Action: {action.value} | {reason})",
+                provenance=f"Source: {source} | Category: {cat}"
+            )
+            messagebox.showinfo("Fact Saved", f"Successfully saved:\n{entity} -> {attr} = {val}", parent=win)
+            win.destroy()
+
+        btn_save = tk.Button(
+            win, text="💾 Save to Local Knowledge Base", bg="#a6e3a1", fg="#11111b",
+            font=("Segoe UI", 10, "bold"), relief="flat", padx=14, pady=6, command=save_fact
+        )
+        btn_save.pack(pady=16)
+
+    def _show_import_window(self):
+        """Displays dialog to import facts from JSON file or seed knowledge."""
+        win = tk.Toplevel(self)
+        win.title("📥 Import Knowledge Feed")
+        win.geometry("500x320")
+        win.configure(bg="#181825")
+        win.resizable(False, False)
+
+        tk.Label(win, text="Import Knowledge Facts", bg="#181825", fg="#f9e2af", font=("Segoe UI", 12, "bold")).pack(pady=(16, 8))
+        tk.Label(win, text="Load verified facts from a JSON file into your offline database.", bg="#181825", fg="#a6adc8", font=("Segoe UI", 9)).pack(pady=(0, 16))
+
+        def load_seed():
+            seed_file = Path("data/seed_knowledge.json")
+            if not seed_file.exists():
+                messagebox.showerror("Error", f"Seed file not found at {seed_file.resolve()}", parent=win)
+                return
+            count = self._import_json_path(seed_file)
+            messagebox.showinfo("Success", f"Successfully loaded {count} facts from seed_knowledge.json!", parent=win)
+            win.destroy()
+
+        def browse_file():
+            from tkinter import filedialog
+            file_path = filedialog.askopenfilename(
+                parent=win,
+                title="Select Knowledge JSON File",
+                filetypes=[("JSON Files", "*.json"), ("All Files", "*.*")]
+            )
+            if file_path:
+                count = self._import_json_path(Path(file_path))
+                messagebox.showinfo("Success", f"Successfully imported {count} facts from {Path(file_path).name}!", parent=win)
+                win.destroy()
+
+        btn_seed = tk.Button(
+            win, text="📦 Reload Seed Knowledge (seed_knowledge.json)", bg="#89b4fa", fg="#11111b",
+            font=("Segoe UI", 10, "bold"), relief="flat", padx=14, pady=8, command=load_seed
+        )
+        btn_seed.pack(fill="x", padx=30, pady=8)
+
+        btn_browse = tk.Button(
+            win, text="📂 Browse & Import Custom JSON File...", bg="#313244", fg="#cdd6f4",
+            font=("Segoe UI", 10), relief="flat", padx=14, pady=8, command=browse_file
+        )
+        btn_browse.pack(fill="x", padx=30, pady=8)
+
+    def _import_json_path(self, path: Path) -> int:
+        """Parses JSON file and applies facts through knowledge engine."""
+        import json
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        facts_list = data if isinstance(data, list) else data.get("facts", [])
+        count = 0
+        for item in facts_list:
+            fact = Fact(
+                entity=item["entity"],
+                attribute=item["attribute"],
+                value=item["value"],
+                source=item.get("source", "JSON Import"),
+                source_priority=item.get("source_priority", 60),
+                category=item.get("category", "general"),
+                confidence=item.get("confidence", 1.0),
+            )
+            self.ke.apply_incoming_fact(fact)
+            count += 1
+        self._update_status_badges()
+        self._append_assistant_message(
+            f"📥 Imported **{count}** facts from `{path.name}`.",
+            provenance="Local Database Refreshed"
+        )
+        return count
 
 
 def main():

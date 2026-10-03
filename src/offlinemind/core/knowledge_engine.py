@@ -314,14 +314,36 @@ class KnowledgeEngine:
         active_facts = [Fact.from_row(r) for r in active_facts_rows]
 
         query_lower = cleaned_query.lower()
+        query_words = set(re.findall(r"\w+", query_lower))
+
+        ENTITY_SYNONYMS = {
+            "college": {"college", "university", "institute", "campus", "school", "institution"},
+            "university": {"university", "college", "institute", "school"},
+            "user": {"my", "me", "i", "student", "user", "self"},
+        }
+
         for f in active_facts:
             e_lower = f.entity.lower()
             a_lower = f.attribute.lower()
-            # If both entity and attribute are mentioned in query
-            if e_lower in query_lower and a_lower in query_lower:
+
+            # Check entity synonyms
+            entity_syns = ENTITY_SYNONYMS.get(e_lower, {e_lower})
+            entity_matched = bool(entity_syns & query_words or any(syn in query_lower for syn in entity_syns))
+
+            # Attribute match
+            attr_matched = a_lower in query_lower or a_lower in query_words
+
+            # 1. Both entity and attribute match -> strong match
+            if entity_matched and attr_matched:
                 results[f.id] = SearchResult(fact=f, score=1.0, match_type="exact")
-            elif e_lower in query_lower or a_lower in query_lower:
-                results[f.id] = SearchResult(fact=f, score=0.8, match_type="entity_attribute")
+            # 2. Entity matches with specific query terms
+            elif entity_matched and len(query_words - entity_syns - STOP_WORDS) == 0:
+                results[f.id] = SearchResult(fact=f, score=0.75, match_type="entity_match")
+            # 3. Only attribute matched, but ONLY if entity is not explicitly contradicted
+            elif attr_matched and not any(other_e in query_lower for other_e in ["college", "university", "user", "library"] if other_e != e_lower):
+                # Only generic attributes if entity could apply
+                if a_lower not in ("name", "code", "type") and len(a_lower) > 3:
+                    results[f.id] = SearchResult(fact=f, score=0.6, match_type="attribute_match")
 
         # 2. FTS5 full-text search
         if tokens:
