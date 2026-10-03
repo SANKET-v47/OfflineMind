@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "offlinemind"
+version = "1.0.0"
+description = "An Offline-First, Self-Updating AI Assistant"
+readme = "README.md"
+requires-python = ">=3.11"
+authors = [
+    { name = "OfflineMind Engineering Team" }
+]
+dependencies = [
+    "requests>=2.31.0",
+    "python-dotenv>=1.0.0",
+    "pydantic>=2.0.0",
+    "pytest>=7.4.0",
+    "python-pptx>=0.6.21",
+    "Pillow>=10.0.0"
+]
+
+[project.scripts]
+offlinemind = "offlinemind.ui.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]

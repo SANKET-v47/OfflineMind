@@ -1,0 +1,58 @@
+{
+  "facts": [
+    {
+      "entity": "College",
+      "attribute": "name",
+      "value": "Springfield Technical College",
+      "category": "education",
+      "source": "Student Handbook 2024",
+      "source_priority": 50,
+      "confidence": 1.0
+    },
+    {
+      "entity": "College",
+      "attribute": "location",
+      "value": "Springfield, OR",
+      "category": "education",
+      "source": "Student Handbook 2024",
+      "source_priority": 50,
+      "confidence": 1.0
+    },
+    {
+      "entity": "College",
+      "attribute": "founded",
+      "value": "1968",
+      "category": "education",
+      "source": "College Archives",
+      "source_priority": 60,
+      "confidence": 1.0
+    },
+    {
+      "entity": "User",
+      "attribute": "major",
+      "value": "Computer Science and AI",
+      "category": "academic",
+      "source": "Registration Office",
+      "source_priority": 90,
+      "confidence": 1.0
+    },
+    {
+      "entity": "User",
+      "attribute": "advisor",
+      "value": "Dr. Sarah Vance",
+      "category": "academic",
+      "source": "Student Portal",
+      "source_priority": 85,
+      "confidence": 1.0
+    },
+    {
+      "entity": "Library",
+      "attribute": "closing_time",
+      "value": "10:00 PM Weekdays",
+      "category": "facilities",
+      "source": "Campus Notice Board",
+      "source_priority": 40,
+      "confidence": 0.95
+    }
+  ]
+}
