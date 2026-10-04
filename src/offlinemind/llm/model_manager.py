@@ -35,8 +35,25 @@ class ModelManager:
         """Initializes the active provider instance."""
         provider_cls = self._REGISTRY.get(self.default_provider_name, OllamaProvider)
         if provider_cls is OllamaProvider:
+            chosen_model = self.default_model_name
+            try:
+                temp_prov = OllamaProvider(model_name="probe", base_url=OLLAMA_BASE_URL, timeout=2.0)
+                installed = temp_prov.list_models()
+                if self.default_model_name in installed:
+                    chosen_model = self.default_model_name
+                else:
+                    for preferred in ["llama3.2:3b", "mistral:7b", "phi3:mini", "llama3.2:1b"]:
+                        if any(preferred in m for m in installed):
+                            chosen_model = next(m for m in installed if preferred in m)
+                            break
+                    else:
+                        if installed:
+                            chosen_model = installed[0]
+            except Exception as e:
+                logger.debug("Model auto-detection skipped: %s", e)
+
             self._active_provider = OllamaProvider(
-                model_name=self.default_model_name,
+                model_name=chosen_model,
                 base_url=OLLAMA_BASE_URL,
                 timeout=self.timeout,
             )
@@ -63,6 +80,15 @@ class ModelManager:
         self.active_provider.model_name = model_name
         logger.info("Switched active model to '%s'", model_name)
         return True
+
+    @property
+    def active_model(self) -> str:
+        """Returns the active model name."""
+        return self.active_provider.model_name
+
+    def get_best_available_model(self) -> str:
+        """Returns the best available model detected on system."""
+        return self.active_provider.model_name
 
     def get_status(self) -> Dict[str, Any]:
         """Returns health diagnostic information for active provider."""

@@ -27,6 +27,7 @@ class LLMService:
         self.model = model
         self.timeout = timeout
         self.model_mgr = model_manager or ModelManager(default_model=model, timeout=timeout)
+        self.model = self.model_mgr.get_best_available_model() or model
 
     def _is_server_reachable(self) -> bool:
         """Fast socket probe to check if Ollama port is open."""

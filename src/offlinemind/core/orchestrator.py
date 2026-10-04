@@ -9,6 +9,7 @@ from typing import Iterator, List, Optional, Dict, Any
 from offlinemind.config import DATA_DIR
 from offlinemind.llm.model_manager import ModelManager
 from offlinemind.web.internet_manager import InternetManager, InternetState
+from offlinemind.web.normalizer import QueryNormalizer
 from offlinemind.web.search import WebSearchProvider, DuckDuckGoSearchProvider, SearchResultItem
 from offlinemind.web.router import QueryRouter, RouteIntent
 from offlinemind.rag.vector_store import LocalVectorStore
@@ -50,9 +51,14 @@ class AssistantOrchestrator:
         attached_doc_path: Optional[str] = None,
     ) -> Iterator[str]:
         """Orchestrates query analysis, retrieval/tools, and yields token stream in real time."""
-        clean_q = query.strip()
+        # 0. Auto-correct typos and normalize query
+        norm_q, corrections = QueryNormalizer.normalize(query)
+        clean_q = norm_q.strip()
         if not clean_q:
             return
+
+        if corrections:
+            logger.info("Auto-corrected query '%s' -> '%s' (corrections: %s)", query, clean_q, corrections)
 
         # 1. Short-term memory turn registration
         self.memory_mgr.add_turn("user", clean_q)
@@ -120,8 +126,21 @@ class AssistantOrchestrator:
                 )
                 yield offline_warning
             else:
-                logger.info("Executing real-time web search for query: %s", clean_q)
-                results = self.search_prov.search(clean_q, max_results=3)
+                search_query = clean_q
+                # Resolve context for short follow-up questions (e.g. 'current CEO', 'who is he')
+                if len(clean_q.split()) <= 4:
+                    recent_turns = self.memory_mgr.get_conversation_context(limit=4)
+                    for t in reversed(recent_turns[:-1]):
+                        content = t.get("content", "") if isinstance(t, dict) else getattr(t, "content", "")
+                        for entity in ["Google", "Microsoft", "Apple", "Amazon", "Tesla", "OpenAI", "Meta", "Nvidia", "Alphabet", "India", "USA", "France", "UK"]:
+                            if entity.lower() in content.lower() and entity.lower() not in search_query.lower():
+                                search_query = f"{search_query} {entity}"
+                                break
+                        if search_query != clean_q:
+                            break
+
+                logger.info("Executing real-time web search for query: %s", search_query)
+                results = self.search_prov.search(search_query, max_results=3)
                 if results:
                     web_citations = results
                     web_context = "\n\n".join([f"Source [{i+1}] ({r.title} - {r.url}):\n{r.snippet}" for i, r in enumerate(results)])
@@ -137,13 +156,13 @@ class AssistantOrchestrator:
 
         # 8. Build Prompt for Local LLM (ChatGPT / Claude / Gemini Persona & Direct Style)
         system_prompt = (
-            "You are OfflineMind, a highly intelligent, direct, and concise personal AI assistant (like ChatGPT, Claude, and Gemini).\n\n"
+            "You are OfflineMind, a highly intelligent, direct, and concise personal AI assistant like ChatGPT, Claude, and Gemini.\n\n"
             "Communication Rules:\n"
-            "1. Be direct, clear, and focused on the key facts. Answer the user's question directly in the very first sentence.\n"
-            "2. Give short, high-value, and important answers. Avoid rambling, repeating the question, or unnecessary filler words.\n"
-            "3. Use clean formatting: bullet points for lists, bolding for key terms, and short paragraphs.\n"
-            "4. Only provide long explanations if the user explicitly asks to 'explain in detail', 'write code', 'write an essay', or elaborate.\n"
-            "5. If document context or web search results are provided below, synthesize only the most relevant facts directly.\n"
+            "1. Answer the user's question directly and accurately in the very first sentence.\n"
+            "2. Understand the true meaning and intent of the user's question, resolving pronouns and follow-up context.\n"
+            "3. If real-time web search results or document context are provided below, they are your primary source of truth. State the current facts accurately.\n"
+            "4. Give short, high-value, and important answers. Avoid rambling, repeating the question, or unnecessary filler words.\n"
+            "5. Use clean formatting: bullet points for lists, bolding for key terms, and short paragraphs.\n"
             "6. Never pretend to have real-time information if offline."
         )
 

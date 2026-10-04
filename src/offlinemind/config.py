@@ -41,7 +41,7 @@ MAX_BACKUP_RETENTION: int = int(os.getenv("OFFLINEMIND_MAX_BACKUPS", "10"))
 
 # LLM / Model Provider Settings
 MODEL_PROVIDER: str = os.getenv("MODEL_PROVIDER", "ollama")
-MODEL_NAME: str = os.getenv("MODEL_NAME", os.getenv("OLLAMA_MODEL", "llama3.2:1b"))
+MODEL_NAME: str = os.getenv("MODEL_NAME", os.getenv("OLLAMA_MODEL", "llama3.2:3b"))
 OLLAMA_BASE_URL: str = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
 OLLAMA_MODEL: str = MODEL_NAME
 OLLAMA_TIMEOUT_SEC: float = float(os.getenv("OLLAMA_TIMEOUT", "60.0"))
