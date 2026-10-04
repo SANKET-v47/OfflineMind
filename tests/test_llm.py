@@ -55,7 +55,7 @@ def test_fallback_extractive_answer_with_history(sample_fact, sample_history):
 
 
 def test_fallback_extractive_answer_no_results():
-    llm = LLMService()
+    llm = LLMService(base_url="http://invalid-ollama-host:11434")
     answer = llm.generate_answer(query="What is the speed of light?", search_results=[])
     assert "do not have verified knowledge" in answer.text
     assert answer.confidence == 0.0

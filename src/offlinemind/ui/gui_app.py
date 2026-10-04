@@ -309,13 +309,24 @@ class OfflineMindGUI(tk.Tk):
                 top_f = search_res[0].fact
                 hist = self.ke.get_history(entity=top_f.entity, attribute=top_f.attribute)
 
-            ans = self.llm.generate_answer(
-                query=query,
-                search_results=search_res,
-                history_entries=hist,
-                include_provenance=include_prov,
-            )
-            self.after(0, lambda: self._stream_assistant_message(ans.text, ans.provenance))
+            self.after(0, self._prepare_assistant_bubble)
+
+            try:
+                for chunk in self.llm.stream_answer(
+                    query=query,
+                    search_results=search_res,
+                    history_entries=hist,
+                    include_provenance=include_prov,
+                ):
+                    self.after(0, lambda c=chunk: self._append_stream_chunk(c))
+            except Exception as e:
+                self.after(0, lambda err=e: self._append_stream_chunk(f"\n[Error: {err}]"))
+
+            if search_res and include_prov:
+                prov_str = f"Source: {search_res[0].fact.source} | Version: v{search_res[0].fact.version}"
+                self.after(0, lambda: self._finish_assistant_stream(prov_str))
+            else:
+                self.after(0, lambda: self._finish_assistant_stream(None))
 
         threading.Thread(target=process_query, daemon=True).start()
 
@@ -326,32 +337,25 @@ class OfflineMindGUI(tk.Tk):
         self.chat_display.see(tk.END)
         self.chat_display.config(state="disabled")
 
-    def _stream_assistant_message(self, text: str, provenance: Optional[str] = None):
-        """Streams assistant message word-by-word with real-time typing animation."""
+    def _prepare_assistant_bubble(self):
         self.chat_display.config(state="normal")
         self.chat_display.insert(tk.END, f"\nOfflineMind\n", "ai_header")
         self.chat_display.see(tk.END)
         self.chat_display.config(state="disabled")
 
-        words = text.split(" ")
+    def _append_stream_chunk(self, chunk: str):
+        self.chat_display.config(state="normal")
+        self.chat_display.insert(tk.END, chunk, "ai_body")
+        self.chat_display.see(tk.END)
+        self.chat_display.config(state="disabled")
 
-        def stream_next(idx=0):
-            if idx < len(words):
-                self.chat_display.config(state="normal")
-                word_to_add = words[idx] + (" " if idx < len(words) - 1 else "\n")
-                self.chat_display.insert(tk.END, word_to_add, "ai_body")
-                self.chat_display.see(tk.END)
-                self.chat_display.config(state="disabled")
-                # Typing cadence between 15-30ms
-                self.after(20, lambda: stream_next(idx + 1))
-            else:
-                if provenance:
-                    self.chat_display.config(state="normal")
-                    self.chat_display.insert(tk.END, f"[{provenance}]\n", "provenance")
-                    self.chat_display.see(tk.END)
-                    self.chat_display.config(state="disabled")
-
-        stream_next()
+    def _finish_assistant_stream(self, provenance: Optional[str] = None):
+        self.chat_display.config(state="normal")
+        self.chat_display.insert(tk.END, "\n")
+        if provenance:
+            self.chat_display.insert(tk.END, f"[{provenance}]\n", "provenance")
+        self.chat_display.see(tk.END)
+        self.chat_display.config(state="disabled")
 
     def _append_assistant_message(self, text: str, provenance: Optional[str] = None, history_note: Optional[str] = None):
         self.chat_display.config(state="normal")

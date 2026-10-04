@@ -8,6 +8,7 @@ import requests
 
 from offlinemind.config import OLLAMA_BASE_URL, OLLAMA_MODEL, OLLAMA_TIMEOUT_SEC
 from offlinemind.core.models import Answer, Fact, FactHistoryEntry, SearchResult
+from offlinemind.llm.model_manager import ModelManager
 
 logger = logging.getLogger(__name__)
 
@@ -20,10 +21,12 @@ class LLMService:
         base_url: str = OLLAMA_BASE_URL,
         model: str = OLLAMA_MODEL,
         timeout: float = OLLAMA_TIMEOUT_SEC,
+        model_manager: Optional[ModelManager] = None,
     ):
         self.base_url = base_url.rstrip("/")
         self.model = model
         self.timeout = timeout
+        self.model_mgr = model_manager or ModelManager(default_model=model, timeout=timeout)
 
     def _is_server_reachable(self) -> bool:
         """Fast socket probe to check if Ollama port is open."""
@@ -33,7 +36,7 @@ class LLMService:
             parsed = urlparse(self.base_url)
             host = parsed.hostname or "127.0.0.1"
             port = parsed.port or 11434
-            with socket.create_connection((host, port), timeout=0.2):
+            with socket.create_connection((host, port), timeout=0.25):
                 return True
         except Exception:
             return False
@@ -44,7 +47,7 @@ class LLMService:
             return False
 
         try:
-            resp = requests.get(f"{self.base_url}/api/tags", timeout=1.0)
+            resp = requests.get(f"{self.base_url}/api/tags", timeout=2.0)
             if resp.status_code == 200:
                 data = resp.json()
                 models = [m.get("name", "") for m in data.get("models", [])]
@@ -94,6 +97,49 @@ class LLMService:
 
         # 3. Deterministic, accurate retrieval-augmented extractive QA
         return self._generate_extractive_answer(query, facts_used[0], history_entries, include_provenance)
+
+    def stream_answer(
+        self,
+        query: str,
+        search_results: List[SearchResult],
+        history_entries: Optional[List[FactHistoryEntry]] = None,
+        include_provenance: bool = True,
+    ):
+        """Yields streaming tokens in real time directly from local LLM provider."""
+        facts_used = [r.fact for r in search_results if r.score >= 0.5]
+        if not facts_used and search_results:
+            facts_used = [search_results[0].fact]
+
+        if self.is_ollama_available():
+            try:
+                if facts_used:
+                    context_lines = [
+                        f"- Entity: {f.entity}, {f.attribute}: {f.value} (Source: {f.source})"
+                        for f in facts_used
+                    ]
+                    prompt = (
+                        f"VERIFIED FACTS:\n{chr(10).join(context_lines)}\n\n"
+                        f"QUESTION: {query}\n\nANSWER:"
+                    )
+                    sys_prompt = "You are OfflineMind, a trustworthy offline AI assistant. Answer using the verified facts."
+                else:
+                    prompt = query
+                    sys_prompt = "You are OfflineMind, a helpful and intelligent offline AI assistant running locally on the user's computer."
+
+                for chunk in self.model_mgr.active_provider.stream_generate(
+                    prompt=prompt,
+                    system_prompt=sys_prompt,
+                    temperature=0.3 if facts_used else 0.7,
+                ):
+                    yield chunk
+                return
+            except Exception as e:
+                logger.warning("Streaming failed, falling back to batch QA: %s", e)
+
+        ans = self.generate_answer(query, search_results, history_entries, include_provenance)
+        words = ans.text.split(" ")
+        for i, w in enumerate(words):
+            yield w + (" " if i < len(words) - 1 else "")
 
     def _call_ollama(
         self,
@@ -145,12 +191,33 @@ class LLMService:
         resp = requests.post(f"{self.base_url}/api/generate", json=payload, timeout=self.timeout)
         if resp.status_code == 200:
             raw_text = resp.json().get("response", "").strip()
+
+            history_note = None
+            if history_entries:
+                mutations = [h for h in history_entries if h.old_value is not None]
+                if mutations:
+                    latest_m = mutations[0]
+                    history_note = (
+                        f"Notice: This fact was updated from '{latest_m.old_value}' "
+                        f"to '{latest_m.new_value}' on {latest_m.timestamp[:10]} "
+                        f"from source '{latest_m.source}'."
+                    )
+                    if latest_m.change_reason:
+                        history_note += f" (Reason: {latest_m.change_reason})"
+
+            final_text = raw_text
+            if history_note and facts:
+                final_text += f"\n\n> ℹ️ {history_note}"
+            if include_provenance and prov_text and facts:
+                final_text += f"\n\n**Provenance:** {prov_text}"
+
             return Answer(
-                text=raw_text,
+                text=final_text,
                 facts_used=facts,
                 provenance=prov_text,
                 model_used=f"ollama:{self.model}",
                 confidence=conf,
+                history_note=history_note,
             )
         return None
 

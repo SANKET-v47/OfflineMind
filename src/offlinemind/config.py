@@ -39,10 +39,12 @@ ALLOW_INSECURE_HTTP: bool = os.getenv("OFFLINEMIND_ALLOW_INSECURE_HTTP", "true")
 SYNC_TIMEOUT_SEC: float = float(os.getenv("OFFLINEMIND_SYNC_TIMEOUT", "10.0"))
 MAX_BACKUP_RETENTION: int = int(os.getenv("OFFLINEMIND_MAX_BACKUPS", "10"))
 
-# LLM / Ollama Settings
+# LLM / Model Provider Settings
+MODEL_PROVIDER: str = os.getenv("MODEL_PROVIDER", "ollama")
+MODEL_NAME: str = os.getenv("MODEL_NAME", os.getenv("OLLAMA_MODEL", "llama3.2:1b"))
 OLLAMA_BASE_URL: str = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
-OLLAMA_MODEL: str = os.getenv("OLLAMA_MODEL", "llama3.2:1b")
-OLLAMA_TIMEOUT_SEC: float = float(os.getenv("OLLAMA_TIMEOUT", "15.0"))
+OLLAMA_MODEL: str = MODEL_NAME
+OLLAMA_TIMEOUT_SEC: float = float(os.getenv("OLLAMA_TIMEOUT", "60.0"))
 
 # Mock Server Settings (for local demo & test)
 MOCK_SERVER_HOST: str = os.getenv("MOCK_SERVER_HOST", "127.0.0.1")
