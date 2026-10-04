@@ -736,8 +736,30 @@ class OfflineMindGUI(tk.Tk):
 
 
 def main():
+    print("\n" + "=" * 65, flush=True)
+    print("        OfflineMind - Modern Offline Desktop AI Assistant", flush=True)
+    print("=" * 65, flush=True)
+    print("  [*] Initializing local models, vector DB, and GUI...", flush=True)
     app = OfflineMindGUI()
-    app.mainloop()
+    # Ensure window is raised to foreground on Windows desktop
+    try:
+        app.lift()
+        app.attributes("-topmost", True)
+        app.after_idle(app.attributes, "-topmost", False)
+        app.focus_force()
+    except Exception:
+        pass
+
+    print("  [+] GUI window is now active on your desktop.", flush=True)
+    print("  [*] Close the application window or press Ctrl+C to exit.", flush=True)
+    print("=" * 65 + "\n", flush=True)
+
+    try:
+        app.mainloop()
+    except KeyboardInterrupt:
+        print("\n[*] Exiting OfflineMind.", flush=True)
+    finally:
+        print("[*] OfflineMind GUI closed cleanly.", flush=True)
 
 
 if __name__ == "__main__":

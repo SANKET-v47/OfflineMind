@@ -1,0 +1,10 @@
+{
+  "python.analysis.extraPaths": [
+    "${workspaceFolder}/src",
+    "C:/Users/SANKET/AppData/Local/Python/pythoncore-3.14-64/Lib/site-packages"
+  ],
+  "python.autoComplete.extraPaths": [
+    "${workspaceFolder}/src",
+    "C:/Users/SANKET/AppData/Local/Python/pythoncore-3.14-64/Lib/site-packages"
+  ]
+}
