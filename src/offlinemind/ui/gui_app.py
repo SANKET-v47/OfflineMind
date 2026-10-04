@@ -8,13 +8,14 @@ import time
 from pathlib import Path
 from typing import Optional
 
-from offlinemind.config import DB_PATH, BACKUP_DIR, SEED_DATA_PATH
+from offlinemind.config import DB_PATH, BACKUP_DIR, SEED_DATA_PATH, DATA_DIR
 from offlinemind.db.connection import DatabaseManager
 from offlinemind.db.backup import BackupManager
 from offlinemind.core.knowledge_engine import KnowledgeEngine
 from offlinemind.core.connectivity import ConnectivityMonitor
 from offlinemind.llm.llm_client import LLMService
 from offlinemind.sync.sync_engine import SyncEngine
+from offlinemind.core.orchestrator import AssistantOrchestrator
 
 
 class OfflineMindGUI(tk.Tk):
@@ -22,9 +23,9 @@ class OfflineMindGUI(tk.Tk):
 
     def __init__(self):
         super().__init__()
-        self.title("OfflineMind - Offline-First AI Assistant")
-        self.geometry("900x700")
-        self.minsize(750, 550)
+        self.title("OfflineMind - Personal AI Assistant (Offline-First)")
+        self.geometry("980x740")
+        self.minsize(800, 600)
 
         # Initialize Backend Components
         self.db = DatabaseManager(DB_PATH)
@@ -36,6 +37,13 @@ class OfflineMindGUI(tk.Tk):
         self.llm = LLMService()
         self.sync_engine = SyncEngine(self.db, self.ke, self.bm, self.monitor)
 
+        # Unified Orchestrator (RAG, Web Search, Memory, Tools, Local LLM)
+        self.orchestrator = AssistantOrchestrator(
+            model_manager=self.llm.model_mgr,
+            knowledge_engine=self.ke,
+            web_search_enabled=True,
+        )
+
         # Seed default trusted source if database has none configured
         if not self.sync_engine.list_trusted_sources(active_only=False):
             from offlinemind.config import MOCK_SERVER_URL
@@ -46,6 +54,8 @@ class OfflineMindGUI(tk.Tk):
             )
 
         self.include_prov_var = tk.BooleanVar(value=True)
+        self.web_enabled_var = tk.BooleanVar(value=True)
+        self._stop_stream_event = threading.Event()
 
         self._configure_styles()
         self._build_ui()
@@ -53,11 +63,12 @@ class OfflineMindGUI(tk.Tk):
 
         # Welcome message in chat
         self._append_assistant_message(
-            "Hello! I am **OfflineMind**, your local, offline-first AI assistant.\n\n"
-            "• Ask me questions about your college, major, courses, or stored facts.\n"
-            "• I function completely offline without internet.\n"
-            "• When connectivity is restored, I can safely synchronize updates from trusted sources.",
-            provenance="Embedded Knowledge Base | Status: Ready",
+            "Hello! I am **OfflineMind**, your private, offline-first personal AI assistant.\n\n"
+            "• I run locally on your computer with complete privacy.\n"
+            "• I can chat, write code, analyze local documents, run calculations, and remember facts.\n"
+            "• When online and permitted, I can search the web for real-time information with citations.\n"
+            "• You can toggle Web Search, manage local memory, or index documents using the toolbar above.",
+            provenance="Local Neural Engine & Embedded Knowledge Base | Status: Ready",
         )
 
     def _configure_styles(self):
@@ -84,7 +95,7 @@ class OfflineMindGUI(tk.Tk):
         title_box = ttk.Frame(header_card, style="Card.TFrame")
         title_box.pack(side="left")
         ttk.Label(title_box, text="🧠 OfflineMind", style="Header.TLabel").pack(anchor="w")
-        ttk.Label(title_box, text="Offline-First Self-Updating Knowledge Engine", style="Status.TLabel").pack(anchor="w")
+        ttk.Label(title_box, text="Private Offline-First Personal AI Assistant with Real-Time Web Intelligence", style="Status.TLabel").pack(anchor="w")
 
         # Right Status Pills
         status_box = ttk.Frame(header_card, style="Card.TFrame")
@@ -102,57 +113,63 @@ class OfflineMindGUI(tk.Tk):
         )
         self.engine_badge.pack(side="left", padx=4)
 
-        self.facts_badge = tk.Label(
-            status_box, text="📚 0 Facts", bg="#313244", fg="#cdd6f4",
+        self.web_badge = tk.Label(
+            status_box, text="🌐 Web: ON", bg="#89b4fa", fg="#11111b",
             font=("Segoe UI", 9, "bold"), padx=10, pady=4, relief="flat"
         )
-        self.facts_badge.pack(side="left", padx=4)
+        self.web_badge.pack(side="left", padx=4)
+
+        self.docs_badge = tk.Label(
+            status_box, text="📄 0 Docs", bg="#313244", fg="#cdd6f4",
+            font=("Segoe UI", 9, "bold"), padx=10, pady=4, relief="flat"
+        )
+        self.docs_badge.pack(side="left", padx=4)
 
         # 2. Controls Toolbar
         toolbar = ttk.Frame(self, style="TFrame")
         toolbar.pack(fill="x", padx=14, pady=(0, 10))
 
-        btn_sync = tk.Button(
-            toolbar, text="🔄 Sync Now", bg="#89b4fa", fg="#11111b",
-            font=("Segoe UI", 9, "bold"), activebackground="#b4befe",
-            command=self._on_sync_clicked, relief="flat", padx=12, pady=4
+        btn_new_chat = tk.Button(
+            toolbar, text="🗑️ New Chat", bg="#313244", fg="#cdd6f4",
+            font=("Segoe UI", 9), command=self._on_new_chat_clicked, relief="flat", padx=10, pady=4
         )
-        btn_sync.pack(side="left", padx=(0, 6))
+        btn_new_chat.pack(side="left", padx=(0, 6))
+
+        self.btn_web_toggle = tk.Button(
+            toolbar, text="🌐 Web: Enabled", bg="#89b4fa", fg="#11111b",
+            font=("Segoe UI", 9, "bold"), command=self._on_toggle_web_clicked, relief="flat", padx=10, pady=4
+        )
+        self.btn_web_toggle.pack(side="left", padx=6)
+
+        btn_memory = tk.Button(
+            toolbar, text="🧠 Memory", bg="#cba6f7", fg="#11111b",
+            font=("Segoe UI", 9, "bold"), command=self._show_memory_window, relief="flat", padx=10, pady=4
+        )
+        btn_memory.pack(side="left", padx=6)
+
+        btn_docs = tk.Button(
+            toolbar, text="📄 Documents (RAG)", bg="#f9e2af", fg="#11111b",
+            font=("Segoe UI", 9, "bold"), command=self._show_documents_window, relief="flat", padx=10, pady=4
+        )
+        btn_docs.pack(side="left", padx=6)
 
         self.btn_toggle_offline = tk.Button(
-            toolbar, text="🌐 Force Simulated Offline", bg="#45475a", fg="#cdd6f4",
-            font=("Segoe UI", 9), activebackground="#585b70",
-            command=self._on_toggle_offline_clicked, relief="flat", padx=10, pady=4
+            toolbar, text="🔒 Force Offline", bg="#45475a", fg="#cdd6f4",
+            font=("Segoe UI", 9), command=self._on_toggle_offline_clicked, relief="flat", padx=10, pady=4
         )
         self.btn_toggle_offline.pack(side="left", padx=6)
 
+        btn_sync = tk.Button(
+            toolbar, text="🔄 Sync Sources", bg="#313244", fg="#cdd6f4",
+            font=("Segoe UI", 9), command=self._on_sync_clicked, relief="flat", padx=10, pady=4
+        )
+        btn_sync.pack(side="left", padx=6)
+
         btn_history = tk.Button(
-            toolbar, text="📜 Version History", bg="#313244", fg="#cdd6f4",
-            font=("Segoe UI", 9), command=self._show_history_window,
-            relief="flat", padx=10, pady=4
+            toolbar, text="📜 History", bg="#313244", fg="#cdd6f4",
+            font=("Segoe UI", 9), command=self._show_history_window, relief="flat", padx=10, pady=4
         )
         btn_history.pack(side="left", padx=6)
-
-        btn_review = tk.Button(
-            toolbar, text="⚖️ Review Queue", bg="#313244", fg="#cdd6f4",
-            font=("Segoe UI", 9), command=self._show_review_window,
-            relief="flat", padx=10, pady=4
-        )
-        btn_review.pack(side="left", padx=6)
-
-        btn_add = tk.Button(
-            toolbar, text="➕ Add Fact", bg="#a6e3a1", fg="#11111b",
-            font=("Segoe UI", 9, "bold"), activebackground="#94e2d5",
-            command=self._show_add_fact_window, relief="flat", padx=10, pady=4
-        )
-        btn_add.pack(side="left", padx=6)
-
-        btn_import = tk.Button(
-            toolbar, text="📥 Import JSON", bg="#f9e2af", fg="#11111b",
-            font=("Segoe UI", 9, "bold"), activebackground="#f5e0dc",
-            command=self._show_import_window, relief="flat", padx=10, pady=4
-        )
-        btn_import.pack(side="left", padx=6)
 
         # 3. Main Chat History
         chat_frame = ttk.Frame(self, style="TFrame")
@@ -186,13 +203,11 @@ class OfflineMindGUI(tk.Tk):
         self.entry_query.bind("<Return>", lambda e: self._on_send_clicked())
         self.entry_query.focus_set()
 
-        chk_prov = tk.Checkbutton(
-            input_card, text="Provenance", variable=self.include_prov_var,
-            bg="#1e1e2e", fg="#a6adc8", selectcolor="#313244",
-            activebackground="#1e1e2e", activeforeground="#cdd6f4",
-            font=("Segoe UI", 9)
+        self.btn_stop = tk.Button(
+            input_card, text="⏹ Stop", bg="#45475a", fg="#cdd6f4",
+            font=("Segoe UI", 9), command=self._on_stop_clicked, relief="flat", padx=10, pady=4, state="disabled"
         )
-        chk_prov.pack(side="left", padx=(0, 8))
+        self.btn_stop.pack(side="left", padx=(0, 8))
 
         btn_send = tk.Button(
             input_card, text="Send ➔", bg="#89b4fa", fg="#11111b",
@@ -238,13 +253,46 @@ class OfflineMindGUI(tk.Tk):
         else:
             self.engine_badge.config(text="🔍 Local Extractive", bg="#313244", fg="#a6adc8")
 
-        # Facts count
-        count = self.ke.count_facts()
-        self.facts_badge.config(text=f"📚 {count} Facts")
+        # Web Search badge
+        if self.web_enabled_var.get() and is_online:
+            self.web_badge.config(text="🌐 Web: ACTIVE", bg="#a6e3a1", fg="#11111b")
+        elif self.web_enabled_var.get() and not is_online:
+            self.web_badge.config(text="🌐 Web: OFFLINE", bg="#45475a", fg="#fab387")
+        else:
+            self.web_badge.config(text="🌐 Web: DISABLED", bg="#313244", fg="#6c7086")
+
+        # Document count badge
+        doc_count = len(self.orchestrator.vector_store.list_documents())
+        self.docs_badge.config(text=f"📄 {doc_count} Docs")
+
+    def _on_toggle_web_clicked(self):
+        curr = self.web_enabled_var.get()
+        self.web_enabled_var.set(not curr)
+        self.orchestrator.web_search_enabled = not curr
+        if not curr:
+            self.btn_web_toggle.config(text="🌐 Web: Enabled", bg="#89b4fa", fg="#11111b")
+        else:
+            self.btn_web_toggle.config(text="🌐 Web: Disabled", bg="#45475a", fg="#cdd6f4")
+        self._update_status_badges()
+
+    def _on_new_chat_clicked(self):
+        self.orchestrator.memory_mgr.clear_short_term()
+        self.chat_display.config(state="normal")
+        self.chat_display.delete("1.0", tk.END)
+        self.chat_display.config(state="disabled")
+        self._append_assistant_message(
+            "New conversation started. Memory buffer cleared. How can I help you?",
+            provenance="New Session",
+        )
+
+    def _on_stop_clicked(self):
+        self._stop_stream_event.set()
+        self.btn_stop.config(state="disabled")
 
     def _on_toggle_offline_clicked(self):
         curr_sim = self.monitor.is_simulated_offline()
         self.monitor.set_simulated_offline(not curr_sim)
+        self.orchestrator.net_mgr.set_force_offline(not curr_sim)
         self._update_status_badges()
 
     def _on_sync_clicked(self):
@@ -298,35 +346,25 @@ class OfflineMindGUI(tk.Tk):
 
         self.entry_query.delete(0, tk.END)
         self._append_user_message(query)
-
-        # Process answer in background
-        include_prov = self.include_prov_var.get()
+        self.btn_stop.config(state="normal")
+        self._stop_stream_event.clear()
 
         def process_query():
-            search_res = self.ke.search(query)
-            hist = None
-            if search_res:
-                top_f = search_res[0].fact
-                hist = self.ke.get_history(entity=top_f.entity, attribute=top_f.attribute)
-
             self.after(0, self._prepare_assistant_bubble)
-
             try:
-                for chunk in self.llm.stream_answer(
+                for chunk in self.orchestrator.process_query_stream(
                     query=query,
-                    search_results=search_res,
-                    history_entries=hist,
-                    include_provenance=include_prov,
+                    permit_web=self.web_enabled_var.get(),
                 ):
+                    if self._stop_stream_event.is_set():
+                        self.after(0, lambda: self._append_stream_chunk("\n[⏹ Generation stopped by user.]"))
+                        break
                     self.after(0, lambda c=chunk: self._append_stream_chunk(c))
             except Exception as e:
                 self.after(0, lambda err=e: self._append_stream_chunk(f"\n[Error: {err}]"))
 
-            if search_res and include_prov:
-                prov_str = f"Source: {search_res[0].fact.source} | Version: v{search_res[0].fact.version}"
-                self.after(0, lambda: self._finish_assistant_stream(prov_str))
-            else:
-                self.after(0, lambda: self._finish_assistant_stream(None))
+            self.after(0, lambda: self._finish_assistant_stream(None))
+            self.after(0, lambda: self.btn_stop.config(state="disabled"))
 
         threading.Thread(target=process_query, daemon=True).start()
 
@@ -558,6 +596,143 @@ class OfflineMindGUI(tk.Tk):
             provenance="Local Database Refreshed"
         )
         return count
+
+    def _show_memory_window(self):
+        """Displays memory viewer and editor for long-term user facts."""
+        win = tk.Toplevel(self)
+        win.title("🧠 Local Long-Term Memory")
+        win.geometry("680x440")
+        win.configure(bg="#181825")
+
+        tk.Label(win, text="Local User Memory", bg="#181825", fg="#cba6f7", font=("Segoe UI", 12, "bold")).pack(pady=(12, 4))
+        tk.Label(win, text="Facts stored locally on your device to personalize offline conversation.", bg="#181825", fg="#a6adc8", font=("Segoe UI", 9)).pack(pady=(0, 10))
+
+        tree_frame = ttk.Frame(win, padding=10)
+        tree_frame.pack(fill="both", expand=True)
+
+        cols = ("Memory Key", "Stored Value")
+        tree = ttk.Treeview(tree_frame, columns=cols, show="headings")
+        tree.heading("Memory Key", text="Memory Key")
+        tree.heading("Stored Value", text="Stored Value")
+        tree.column("Memory Key", width=180)
+        tree.column("Stored Value", width=420)
+
+        facts = self.orchestrator.memory_mgr.get_all_facts()
+        for k, v in facts.items():
+            tree.insert("", "end", values=(k, str(v)))
+
+        tree.pack(side="left", fill="both", expand=True)
+        scroll = ttk.Scrollbar(tree_frame, orient="vertical", command=tree.yview)
+        tree.configure(yscrollcommand=scroll.set)
+        scroll.pack(side="right", fill="y")
+
+        btn_box = tk.Frame(win, bg="#181825")
+        btn_box.pack(fill="x", padx=14, pady=10)
+
+        def forget_selected():
+            sel = tree.selection()
+            if not sel:
+                return
+            item = tree.item(sel[0])
+            key = item["values"][0]
+            self.orchestrator.memory_mgr.forget_fact(key)
+            tree.delete(sel[0])
+            messagebox.showinfo("Memory Deleted", f"Removed '{key}' from memory.", parent=win)
+
+        def export_mem():
+            from tkinter import filedialog
+            f_path = filedialog.asksaveasfilename(
+                parent=win,
+                title="Export Memory JSON",
+                defaultextension=".json",
+                filetypes=[("JSON Files", "*.json")]
+            )
+            if f_path:
+                self.orchestrator.memory_mgr.export_memory(Path(f_path))
+                messagebox.showinfo("Success", f"Memory exported to {Path(f_path).name}", parent=win)
+
+        tk.Button(btn_box, text="🗑️ Forget Selected", bg="#f38ba8", fg="#11111b", font=("Segoe UI", 9, "bold"), relief="flat", padx=10, pady=4, command=forget_selected).pack(side="left", padx=4)
+        tk.Button(btn_box, text="📤 Export Memory", bg="#89b4fa", fg="#11111b", font=("Segoe UI", 9, "bold"), relief="flat", padx=10, pady=4, command=export_mem).pack(side="left", padx=4)
+
+    def _show_documents_window(self):
+        """Displays local RAG document repository manager."""
+        win = tk.Toplevel(self)
+        win.title("📄 Local Document Repository (RAG)")
+        win.geometry("740x450")
+        win.configure(bg="#181825")
+
+        tk.Label(win, text="Local Document Knowledge Base", bg="#181825", fg="#f9e2af", font=("Segoe UI", 12, "bold")).pack(pady=(12, 4))
+        tk.Label(win, text="Ingest local PDFs, Word docs, code, and text files for offline semantic search.", bg="#181825", fg="#a6adc8", font=("Segoe UI", 9)).pack(pady=(0, 10))
+
+        tree_frame = ttk.Frame(win, padding=10)
+        tree_frame.pack(fill="both", expand=True)
+
+        cols = ("Doc ID", "File Name", "Type", "Chunks", "Chars")
+        tree = ttk.Treeview(tree_frame, columns=cols, show="headings")
+        for c in cols:
+            tree.heading(c, text=c)
+        tree.column("Doc ID", width=120)
+        tree.column("File Name", width=260)
+        tree.column("Type", width=70)
+        tree.column("Chunks", width=70)
+        tree.column("Chars", width=80)
+
+        def refresh_doc_list():
+            for item in tree.get_children():
+                tree.delete(item)
+            docs = self.orchestrator.vector_store.list_documents()
+            for d in docs:
+                tree.insert("", "end", values=(d["doc_id"][:12], d["name"], d.get("extension", ""), d.get("chunk_count", 0), d.get("char_count", 0)))
+            self._update_status_badges()
+
+        refresh_doc_list()
+
+        tree.pack(side="left", fill="both", expand=True)
+        scroll = ttk.Scrollbar(tree_frame, orient="vertical", command=tree.yview)
+        tree.configure(yscrollcommand=scroll.set)
+        scroll.pack(side="right", fill="y")
+
+        btn_box = tk.Frame(win, bg="#181825")
+        btn_box.pack(fill="x", padx=14, pady=10)
+
+        def add_document():
+            from tkinter import filedialog
+            f_path = filedialog.askopenfilename(
+                parent=win,
+                title="Select Document for Offline RAG",
+                filetypes=[
+                    ("All Supported Files", "*.pdf;*.txt;*.docx;*.md;*.py;*.json;*.csv"),
+                    ("PDF Documents", "*.pdf"),
+                    ("Text & Markdown", "*.txt;*.md"),
+                    ("Word Documents", "*.docx"),
+                    ("Code Files", "*.py;*.json;*.csv;*.sql"),
+                    ("All Files", "*.*")
+                ]
+            )
+            if f_path:
+                try:
+                    doc_id = self.orchestrator.vector_store.add_document(Path(f_path))
+                    refresh_doc_list()
+                    messagebox.showinfo("Success", f"Ingested '{Path(f_path).name}' into local vector knowledge base!", parent=win)
+                except Exception as e:
+                    messagebox.showerror("Ingestion Error", f"Failed to ingest document: {e}", parent=win)
+
+        def delete_document():
+            sel = tree.selection()
+            if not sel:
+                return
+            item = tree.item(sel[0])
+            doc_id_prefix = item["values"][0]
+            # Match full doc id
+            for d in self.orchestrator.vector_store.list_documents():
+                if d["doc_id"].startswith(doc_id_prefix):
+                    self.orchestrator.vector_store.delete_document(d["doc_id"])
+                    break
+            refresh_doc_list()
+            messagebox.showinfo("Deleted", "Document removed from local vector store.", parent=win)
+
+        tk.Button(btn_box, text="➕ Ingest Document...", bg="#a6e3a1", fg="#11111b", font=("Segoe UI", 9, "bold"), relief="flat", padx=12, pady=4, command=add_document).pack(side="left", padx=4)
+        tk.Button(btn_box, text="🗑️ Delete Document", bg="#f38ba8", fg="#11111b", font=("Segoe UI", 9, "bold"), relief="flat", padx=10, pady=4, command=delete_document).pack(side="left", padx=4)
 
 
 def main():

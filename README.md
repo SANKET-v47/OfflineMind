@@ -1,25 +1,25 @@
-# OfflineMind: An Offline-First, Self-Updating AI Assistant
+# OfflineMind: Offline-First AI Assistant with Optional Real-Time Web Intelligence
 
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Tests: 38 Passed](https://img.shields.io/badge/tests-38%20passed-brightgreen.svg)]()
-[![Code Coverage: 80%+](https://img.shields.io/badge/coverage-80%25+-success.svg)]()
-[![RAM: <100MB](https://img.shields.io/badge/RAM-%3C100MB-informational.svg)]()
+[![Tests: 73 Passed](https://img.shields.io/badge/tests-73%20passed-brightgreen.svg)]()
+[![Model: Ollama Llama 3.2](https://img.shields.io/badge/LLM-Local%20Ollama-purple.svg)]()
+[![Privacy: Zero Telemetry](https://img.shields.io/badge/privacy-100%25%20local-success.svg)]()
 
-> **OfflineMind** is a production-grade, offline-first artificial intelligence assistant engineered to run 100% on the user's local device without internet. When connectivity is detected, it automatically and safely updates its knowledge base from trusted endpoints, archives historical facts immutably, and returns to offline operation with zero data corruption.
+> **OfflineMind** is a complete, private, offline-first personal AI assistant for Windows. It provides a ChatGPT-like conversational experience powered by local LLMs (Ollama Llama 3.2 / Phi-3), with local document analysis (RAG), multi-tiered memory, sandboxed tools, and optional real-time web intelligence with direct source citations when connected to the internet.
 
 ---
 
 ## 🌟 Key Highlights
 
-- **🧠 Complete Offline Autonomy**: Answers factual questions, performs BM25-ranked full-text search, and tracks knowledge locally with zero cloud dependencies.
-- **🔄 Safe Self-Updating Engine**: Automatically detects connectivity transitions in the background and commits updates from trusted JSON/REST feeds atomically.
-- **🛡️ Disaster-Proof Snapshots**: Creates verified SQLite point-in-time snapshot backups before every sync, rolling back automatically on mid-sync connection drops.
-- **📜 Immutable Version Lineage**: Facts are never deleted or silently overwritten. Monotonic versioning (`v1 -> v2`) permanently archives previous values, timestamps, and mutating sources.
-- **⚖️ Deterministic Conflict Resolution**: Multi-source authority matrix with priority weights, newest-timestamp rules, and a quarantined Review Queue for ambiguous updates.
-- **⚡ Hybrid Inference Engine**: Integrates natively with local **Ollama** models (Phi-3 Mini, Llama 3.2), with an automatic fallback to high-precision extractive QA if no LLM is installed.
-- **💻 Ultra-Lightweight Footprint**: Consumes less than 60 MB RAM, running effortlessly on standard laptops with 8 GB RAM on Windows, macOS, or Linux.
-- **🖥️ Dual Interfaces**: Includes both an interactive Terminal CLI / REPL and a sleek native desktop GUI built with Tkinter.
+- **🧠 100% Offline AI Brain**: Runs models entirely on your local hardware using Ollama (`llama3.2:1b`, `llama3.2:3b`, etc.) with zero cloud API dependencies.
+- **🌐 Selective Real-Time Web Intelligence**: Seamlessly queries DuckDuckGo for live facts, current events, and documentation, citing sources directly.
+- **🛡️ Hardware Privacy Killswitch**: One-click toggle in the desktop UI and auto-detection; never attempts network requests when offline.
+- **📚 Local Document RAG**: Ingests `.pdf`, `.docx`, `.md`, `.txt`, `.py` into an embedded SQLite vector store for semantic retrieval and questioning.
+- **🧠 4-Tier Structured Memory**: Multi-turn conversation context, persistent user profile facts (`user_profile.json`), episodic logs, and full export/import/clear controls.
+- **⚙️ Sandboxed System Tools**: AST-safe mathematical evaluator, system telemetry, and user-confirmed file operations.
+- **🔄 Safe Self-Updating Engine**: Explicit app release checks, model upgrade proposals with hardware specs, and web knowledge ingestion into local RAG.
+- **🖥️ Modern Windows Desktop GUI**: Clean Tkinter interface with token-by-token streaming, live connectivity pill, model status, and Document/Memory management dialogs.
 
 ---
 
