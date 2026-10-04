@@ -89,6 +89,8 @@ class SyncEngine:
         if AUTO_SYNC_ON_CONNECT:
             self.connectivity.on_connect(self._on_connection_restored)
 
+
+
     def _on_connection_restored(self) -> None:
         """Triggered automatically when connectivity is regained."""
         logger.info("Auto-sync triggered by online event.")

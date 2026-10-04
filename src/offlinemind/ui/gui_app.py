@@ -35,6 +35,15 @@ class OfflineMindGUI(tk.Tk):
         self.llm = LLMService()
         self.sync_engine = SyncEngine(self.db, self.ke, self.bm, self.monitor)
 
+        # Seed default trusted source if database has none configured
+        if not self.sync_engine.list_trusted_sources(active_only=False):
+            from offlinemind.config import MOCK_SERVER_URL
+            self.sync_engine.add_trusted_source(
+                name="Official University Registrar",
+                url=f"{MOCK_SERVER_URL}/api/trusted_feed",
+                priority=85,
+            )
+
         self.include_prov_var = tk.BooleanVar(value=True)
 
         self._configure_styles()
@@ -249,15 +258,34 @@ class OfflineMindGUI(tk.Tk):
 
         def run_sync():
             results = self.sync_engine.sync_all()
+            if not results:
+                self.after(0, lambda: messagebox.showwarning(
+                    "No Sources Configured",
+                    "No trusted sources found in database.\nUse '📥 Import JSON' or register a feed URL."
+                ))
+                return
             total_up = sum(r.facts_updated for r in results)
             total_add = sum(r.facts_added for r in results)
-            status_summary = (
-                f"Sync Completed!\n"
-                f"• Facts Updated: {total_up}\n"
-                f"• Facts Added: {total_add}\n"
-                f"• Sources Synced: {len(results)}"
-            )
-            self.after(0, lambda: messagebox.showinfo("Sync Success", status_summary))
+            failed = [r for r in results if r.status == "FAILED"]
+            if failed:
+                err_details = "\n".join(f"• {r.source_url}:\n  {r.error_message}" for r in failed)
+                status_summary = (
+                    f"Sync Finished with Warnings:\n"
+                    f"• Facts Updated: {total_up}\n"
+                    f"• Facts Added: {total_add}\n"
+                    f"• Sources Synced: {len(results) - len(failed)}/{len(results)}\n\n"
+                    f"Failed Source(s):\n{err_details}\n\n"
+                    f"Tip: If testing locally, ensure the mock server is running:\n  python run_mock_server.py"
+                )
+                self.after(0, lambda: messagebox.showwarning("Sync Warning", status_summary))
+            else:
+                status_summary = (
+                    f"Sync Completed Successfully!\n"
+                    f"• Facts Updated: {total_up}\n"
+                    f"• Facts Added: {total_add}\n"
+                    f"• Sources Synced: {len(results)}"
+                )
+                self.after(0, lambda: messagebox.showinfo("Sync Success", status_summary))
             self.after(0, self._update_status_badges)
 
         threading.Thread(target=run_sync, daemon=True).start()
