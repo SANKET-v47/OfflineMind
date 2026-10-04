@@ -1,6 +1,7 @@
 """Central Assistant Orchestrator coordinating Router, Local LLM, Memory, RAG, Web Search, and Tools."""
 
 from __future__ import annotations
+import json
 import logging
 from pathlib import Path
 from typing import Iterator, List, Optional, Dict, Any
@@ -61,7 +62,7 @@ class AssistantOrchestrator:
             content = clean_q.split(" ", 2)[-1]
             key = f"note_{len(self.memory_mgr.get_all_facts()) + 1}"
             self.memory_mgr.remember_fact(key, content)
-            reply = f"✅ I have committed this to my local long-term memory: '{content}'"
+            reply = f"[Memory Saved] I have committed this to my local long-term memory: '{content}'"
             self.memory_mgr.add_turn("assistant", reply)
             yield reply
             return
@@ -76,7 +77,7 @@ class AssistantOrchestrator:
                 res = self.tool_mgr.execute("system_info", {})
                 if res.success:
                     reply = (
-                        f"📊 **System Diagnostics (Offline):**\n"
+                        f"**System Diagnostics (Offline):**\n"
                         f"- OS: {res.output['os']} {res.output['os_release']} ({res.output['architecture']})\n"
                         f"- Disk Storage: {res.output['disk_free_gb']} GB free out of {res.output['disk_total_gb']} GB ({res.output['disk_used_percent']}% used)\n"
                         f"- Python Runtime: {res.output['python_version']}"
@@ -92,7 +93,7 @@ class AssistantOrchestrator:
                 expr = re.sub(r"[^\d+\-*/().\s\w]", "", clean_q.replace("calculate", "").replace("what is", "").strip())
                 res = self.tool_mgr.execute("calculator", {"expression": expr})
                 if res.success:
-                    reply = f"🔢 **Calculation Result:** `{expr}` = **{res.output}**"
+                    reply = f"**Calculation Result:** `{expr}` = **{res.output}**"
                     self.memory_mgr.add_turn("assistant", reply)
                     yield reply
                     return
@@ -113,7 +114,7 @@ class AssistantOrchestrator:
             if not self.net_mgr.is_online():
                 # Strictly adhere to Rule 20: Do NOT hallucinate current info if offline
                 offline_warning = (
-                    "🔴 **Offline Mode Notice**: You asked for current information, but your device is currently offline "
+                    "[Offline Mode Notice]: You asked for current information, but your device is currently offline "
                     "or internet access is disabled. I cannot verify today's information without an active connection.\n\n"
                     "Here is what I can tell you from my offline knowledge and reasoning:\n\n"
                 )
@@ -176,7 +177,7 @@ class AssistantOrchestrator:
         else:
             # Fallback when no local model daemon is active
             fallback = (
-                "⚠️ Local model daemon is currently not running.\n"
+                "[Notice]: Local model daemon is currently not running.\n"
                 "Please run `ollama run llama3.2:1b` in PowerShell to activate the local neural model."
             )
             yield fallback
@@ -186,10 +187,10 @@ class AssistantOrchestrator:
         footnotes = []
         if web_citations:
             sources_txt = "\n".join([f"- [{i+1}] [{c.title}]({c.url})" for i, c in enumerate(web_citations)])
-            footnotes.append(f"\n\n🌐 **Web Sources:**\n{sources_txt}")
+            footnotes.append(f"\n\n**Web Sources:**\n{sources_txt}")
         if rag_citations:
             docs_txt = ", ".join(rag_citations)
-            footnotes.append(f"\n\n📄 **Document Context:** {docs_txt}")
+            footnotes.append(f"\n\n**Document Context:** {docs_txt}")
 
         for fn in footnotes:
             yield fn
