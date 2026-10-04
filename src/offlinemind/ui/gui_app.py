@@ -5,6 +5,7 @@ import tkinter as tk
 from tkinter import ttk, messagebox, scrolledtext
 import threading
 import time
+from pathlib import Path
 from typing import Optional
 
 from offlinemind.config import DB_PATH, BACKUP_DIR, SEED_DATA_PATH
@@ -314,7 +315,7 @@ class OfflineMindGUI(tk.Tk):
                 history_entries=hist,
                 include_provenance=include_prov,
             )
-            self.after(0, lambda: self._append_assistant_message(ans.text, ans.provenance, ans.history_note))
+            self.after(0, lambda: self._stream_assistant_message(ans.text, ans.provenance))
 
         threading.Thread(target=process_query, daemon=True).start()
 
@@ -324,6 +325,33 @@ class OfflineMindGUI(tk.Tk):
         self.chat_display.insert(tk.END, f"{text}\n", "user_body")
         self.chat_display.see(tk.END)
         self.chat_display.config(state="disabled")
+
+    def _stream_assistant_message(self, text: str, provenance: Optional[str] = None):
+        """Streams assistant message word-by-word with real-time typing animation."""
+        self.chat_display.config(state="normal")
+        self.chat_display.insert(tk.END, f"\nOfflineMind\n", "ai_header")
+        self.chat_display.see(tk.END)
+        self.chat_display.config(state="disabled")
+
+        words = text.split(" ")
+
+        def stream_next(idx=0):
+            if idx < len(words):
+                self.chat_display.config(state="normal")
+                word_to_add = words[idx] + (" " if idx < len(words) - 1 else "\n")
+                self.chat_display.insert(tk.END, word_to_add, "ai_body")
+                self.chat_display.see(tk.END)
+                self.chat_display.config(state="disabled")
+                # Typing cadence between 15-30ms
+                self.after(20, lambda: stream_next(idx + 1))
+            else:
+                if provenance:
+                    self.chat_display.config(state="normal")
+                    self.chat_display.insert(tk.END, f"[{provenance}]\n", "provenance")
+                    self.chat_display.see(tk.END)
+                    self.chat_display.config(state="disabled")
+
+        stream_next()
 
     def _append_assistant_message(self, text: str, provenance: Optional[str] = None, history_note: Optional[str] = None):
         self.chat_display.config(state="normal")

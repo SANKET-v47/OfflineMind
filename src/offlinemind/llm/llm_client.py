@@ -48,8 +48,12 @@ class LLMService:
             if resp.status_code == 200:
                 data = resp.json()
                 models = [m.get("name", "") for m in data.get("models", [])]
-                model_base = self.model.split(":")[0]
-                return any(model_base in m for m in models)
+                if models:
+                    model_base = self.model.split(":")[0]
+                    # If specified model is present, keep it; otherwise use the first locally available model
+                    if not any(model_base in m for m in models):
+                        self.model = models[0]
+                    return True
         except Exception:
             pass
         return False
@@ -61,22 +65,12 @@ class LLMService:
         history_entries: Optional[List[FactHistoryEntry]] = None,
         include_provenance: bool = True,
     ) -> Answer:
-        """Generates an answer grounded strictly in verified local facts."""
-        if not search_results:
-            return Answer(
-                text="I do not have verified knowledge about that in my offline knowledge base yet.",
-                facts_used=[],
-                provenance="No matching local records found.",
-                model_used="retrieval-fallback",
-                confidence=0.0,
-            )
-
-        top_fact = search_results[0].fact
+        """Generates an answer grounded in verified facts, or via local neural LLM."""
         facts_used = [r.fact for r in search_results if r.score >= 0.5]
-        if not facts_used:
-            facts_used = [top_fact]
+        if not facts_used and search_results:
+            facts_used = [search_results[0].fact]
 
-        # Check if Ollama is running and available
+        # 1. If local neural LLM (Ollama) is available, use it
         if self.is_ollama_available():
             try:
                 answer = self._call_ollama(query, facts_used, history_entries, include_provenance)
@@ -85,8 +79,21 @@ class LLMService:
             except Exception as e:
                 logger.warning("Ollama inference failed, falling back to extractive QA: %s", e)
 
-        # Fallback to deterministic, accurate retrieval-augmented extractive QA
-        return self._generate_extractive_answer(query, top_fact, history_entries, include_provenance)
+        # 2. If no facts matched and no LLM is running
+        if not facts_used:
+            return Answer(
+                text=(
+                    "I do not have verified knowledge about that in my local offline knowledge base.\n\n"
+                    "💡 *To chat with me freely like ChatGPT on any topic offline, start a local neural model (like Ollama: `ollama run phi3:mini` or `llama3.2`).*"
+                ),
+                facts_used=[],
+                provenance="No matching local records found. Start Ollama for open-domain chat.",
+                model_used="retrieval-fallback",
+                confidence=0.0,
+            )
+
+        # 3. Deterministic, accurate retrieval-augmented extractive QA
+        return self._generate_extractive_answer(query, facts_used[0], history_entries, include_provenance)
 
     def _call_ollama(
         self,
@@ -95,45 +102,55 @@ class LLMService:
         history_entries: Optional[List[FactHistoryEntry]],
         include_provenance: bool,
     ) -> Optional[Answer]:
-        """Calls local Ollama instance with grounded context."""
-        context_lines = []
-        for f in facts:
-            context_lines.append(f"- Entity: {f.entity}, {f.attribute}: {f.value} (Source: {f.source}, Updated: {f.updated_at}, Version: {f.version})")
+        """Calls local Ollama instance with grounded context or general conversational prompt."""
+        if facts:
+            context_lines = []
+            for f in facts:
+                context_lines.append(f"- Entity: {f.entity}, {f.attribute}: {f.value} (Source: {f.source}, Updated: {f.updated_at}, Version: {f.version})")
 
-        history_lines = []
-        if history_entries:
-            for h in history_entries[:3]:
-                if h.old_value:
-                    history_lines.append(f"- Previously was '{h.old_value}', updated to '{h.new_value}' on {h.timestamp} from {h.source} (Reason: {h.change_reason})")
+            history_lines = []
+            if history_entries:
+                for h in history_entries[:3]:
+                    if h.old_value:
+                        history_lines.append(f"- Previously was '{h.old_value}', updated to '{h.new_value}' on {h.timestamp} from {h.source} (Reason: {h.change_reason})")
 
-        prompt = (
-            "You are OfflineMind, a trustworthy offline-first AI assistant. "
-            "Answer the user's question using ONLY the provided verified facts below. "
-            "If the fact has a recorded historical change, mention what it was previously, when it was updated, and the source.\n\n"
-            f"VERIFIED FACTS:\n{chr(10).join(context_lines)}\n\n"
-        )
-        if history_lines:
-            prompt += f"UPDATE HISTORY:\n{chr(10).join(history_lines)}\n\n"
-
-        prompt += f"QUESTION: {query}\n\nANSWER (concise and factual):"
+            prompt = (
+                "You are OfflineMind, a trustworthy offline-first AI assistant. "
+                "Answer the user's question using the provided verified facts below. "
+                "If the fact has a recorded historical change, mention what it was previously, when it was updated, and the source.\n\n"
+                f"VERIFIED FACTS:\n{chr(10).join(context_lines)}\n\n"
+            )
+            if history_lines:
+                prompt += f"UPDATE HISTORY:\n{chr(10).join(history_lines)}\n\n"
+            prompt += f"QUESTION: {query}\n\nANSWER (concise and factual):"
+            prov_text = self._build_provenance_str(facts[0])
+            conf = facts[0].confidence
+        else:
+            prompt = (
+                "You are OfflineMind, a helpful and intelligent offline AI assistant running locally on the user's device. "
+                "Answer the user's question clearly, informatively, and accurately in real time.\n\n"
+                f"QUESTION: {query}\n\n"
+                "ANSWER:"
+            )
+            prov_text = f"Local Neural LLM ({self.model}) | Completely Offline"
+            conf = 0.9
 
         payload = {
             "model": self.model,
             "prompt": prompt,
             "stream": False,
-            "options": {"temperature": 0.1, "top_p": 0.9},
+            "options": {"temperature": 0.3 if facts else 0.7, "top_p": 0.9},
         }
 
         resp = requests.post(f"{self.base_url}/api/generate", json=payload, timeout=self.timeout)
         if resp.status_code == 200:
             raw_text = resp.json().get("response", "").strip()
-            prov_text = self._build_provenance_str(facts[0])
             return Answer(
                 text=raw_text,
                 facts_used=facts,
                 provenance=prov_text,
                 model_used=f"ollama:{self.model}",
-                confidence=facts[0].confidence,
+                confidence=conf,
             )
         return None
 
