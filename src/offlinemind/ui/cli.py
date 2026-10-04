@@ -163,18 +163,39 @@ def cmd_add_fact(args):
 
 
 def interactive_repl():
-    """Runs a friendly interactive shell."""
+    """Runs a friendly interactive shell powered by AssistantOrchestrator."""
     _, _, ke, monitor, llm, sync = init_system()
-    print("\n" + "=" * 60)
-    print("       Welcome to OfflineMind Interactive Shell")
-    print("   Type your questions or commands (:status, :sync, :quit)")
-    print("=" * 60 + "\n")
+    from offlinemind.core.orchestrator import AssistantOrchestrator
+
+    orchestrator = AssistantOrchestrator(
+        model_manager=llm.model_mgr,
+        knowledge_engine=ke,
+        web_search_enabled=True,
+    )
+    web_enabled = True
+
+    print("\n" + "=" * 65)
+    print("           OfflineMind - Local Interactive Assistant")
+    print("=" * 65)
+    print("  Commands:")
+    print("    :status           - Show system, connectivity, and model diagnostics")
+    print("    :web on/off       - Enable or disable real-time web intelligence")
+    print("    :memory           - Inspect long-term remembered user facts")
+    print("    :docs             - List indexed RAG documents")
+    print("    :ingest <path>    - Ingest a local document (PDF, TXT, MD, etc.)")
+    print("    :sync             - Trigger manual knowledge base synchronization")
+    print("    :clear            - Reset conversation context")
+    print("    :help             - Show this help banner")
+    print("    :quit             - Exit the assistant")
+    print("=" * 65 + "\n")
 
     while True:
         try:
-            user_input = input("OfflineMind> ").strip()
+            web_tag = "web:ON" if web_enabled else "web:OFF"
+            user_input = input(f"OfflineMind [{web_tag}]> ").strip()
             if not user_input:
                 continue
+
             if user_input in (":quit", ":exit", "quit", "exit"):
                 print("Goodbye!")
                 break
@@ -184,14 +205,57 @@ def interactive_repl():
                 cmd_sync(None)
             elif user_input == ":history":
                 cmd_history(argparse.Namespace(entity=None, attribute=None))
+            elif user_input.startswith(":web"):
+                parts = user_input.split()
+                if len(parts) > 1 and parts[1].lower() in ("off", "0", "false"):
+                    web_enabled = False
+                    print("[*] Web intelligence disabled (strictly offline).")
+                elif len(parts) > 1 and parts[1].lower() in ("on", "1", "true"):
+                    web_enabled = True
+                    print("[*] Web intelligence enabled (when connected).")
+                else:
+                    print(f"[*] Web intelligence is currently: {'ON' if web_enabled else 'OFF'}")
+            elif user_input == ":memory":
+                facts = orchestrator.memory_mgr.get_all_facts()
+                if not facts:
+                    print("No long-term facts stored yet. (Try: 'Remember that my name is Alice')")
+                else:
+                    print(f"\nLong-Term Memory ({len(facts)} entries):")
+                    for k, v in facts.items():
+                        print(f"  • {k}: {v}")
+                    print()
+            elif user_input == ":docs":
+                docs = orchestrator.vector_store.list_documents()
+                if not docs:
+                    print("No documents ingested yet. Use ':ingest <filepath>' to add documents.")
+                else:
+                    print(f"\nIndexed Documents ({len(docs)} files):")
+                    for d in docs:
+                        print(f"  • {d['name']} ({d['chunk_count']} chunks, {d['char_count']} chars) [ID: {d['doc_id'][:8]}...]")
+                    print()
+            elif user_input.startswith(":ingest "):
+                doc_path = user_input[8:].strip().strip('"').strip("'")
+                target = Path(doc_path)
+                if not target.exists():
+                    print(f"[!] File not found: {target}")
+                else:
+                    try:
+                        doc_id = orchestrator.vector_store.add_document(target)
+                        print(f"[+] Successfully ingested '{target.name}' (ID: {doc_id[:8]}...) into RAG store.")
+                    except Exception as e:
+                        print(f"[!] Ingestion failed: {e}")
+            elif user_input == ":clear":
+                orchestrator.memory_mgr.clear_short_term()
+                print("[*] Conversation context cleared.")
+            elif user_input == ":help":
+                print("\n  Available commands: :status, :web on/off, :memory, :docs, :ingest <path>, :sync, :clear, :quit\n")
             else:
-                search_res = ke.search(user_input)
-                hist = None
-                if search_res:
-                    f = search_res[0].fact
-                    hist = ke.get_history(entity=f.entity, attribute=f.attribute)
-                ans = llm.generate_answer(user_input, search_res, hist, include_provenance=True)
-                print(f"\n{ans.text}\n")
+                # Stream assistant response in real time to terminal
+                print()
+                for token in orchestrator.process_query_stream(user_input, permit_web=web_enabled):
+                    sys.stdout.write(token)
+                    sys.stdout.flush()
+                print("\n")
         except (KeyboardInterrupt, EOFError):
             print("\nExiting OfflineMind.")
             break

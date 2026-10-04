@@ -72,3 +72,21 @@ def test_cli_history(cli_test_env):
     text = output.getvalue()
     assert "Audit History Trail" in text
     assert "Springfield Tech" in text
+
+
+def test_interactive_repl_commands(cli_test_env):
+    from offlinemind.ui.cli import interactive_repl
+
+    user_inputs = iter([":web off", ":help", ":clear", ":memory", ":docs", ":quit"])
+    output = StringIO()
+
+    with patch("builtins.input", side_effect=lambda prompt="": next(user_inputs)), \
+         patch("sys.stdout", output):
+        interactive_repl()
+
+    out_text = output.getvalue()
+    assert "Web intelligence disabled" in out_text
+    assert "Available commands" in out_text
+    assert "Conversation context cleared" in out_text
+    assert "Goodbye!" in out_text
+
