@@ -196,12 +196,24 @@ class OfflineMindGUI(tk.Tk):
         input_card.pack(fill="x", padx=14, pady=12)
 
         self.entry_query = tk.Entry(
-            input_card, bg="#313244", fg="#cdd6f4", insertbackground="#cdd6f4",
-            font=("Segoe UI", 11), relief="flat"
+            input_card,
+            bg="#313244",
+            fg="#cdd6f4",
+            insertbackground="#ffffff",
+            insertwidth=2,
+            insertontime=600,
+            insertofftime=300,
+            selectbackground="#585b70",
+            selectforeground="#ffffff",
+            font=("Segoe UI", 11),
+            relief="flat",
+            highlightthickness=1,
+            highlightbackground="#45475a",
+            highlightcolor="#89b4fa",
         )
-        self.entry_query.pack(side="left", fill="x", expand=True, ipady=6, padx=(0, 8))
+        self.entry_query.pack(side="left", fill="x", expand=True, ipady=8, padx=(0, 8))
         self.entry_query.bind("<Return>", lambda e: self._on_send_clicked())
-        self.entry_query.focus_set()
+        self.after(100, lambda: self.entry_query.focus_set())
 
         self.btn_stop = tk.Button(
             input_card, text="⏹ Stop", bg="#45475a", fg="#cdd6f4",
@@ -217,53 +229,76 @@ class OfflineMindGUI(tk.Tk):
         btn_send.pack(side="right")
 
     def _start_status_poller(self):
-        """Starts periodic refresh of network badges."""
+        """Starts periodic refresh of network badges asynchronously in background without blocking UI."""
         def poll():
             while True:
-                time.sleep(1.5)
                 try:
-                    self.after(0, self._update_status_badges)
+                    # Perform ALL network/socket/HTTP and database queries in background thread
+                    is_online = self.monitor.is_online()
+                    is_sim = self.monitor.is_simulated_offline()
+                    ollama_ok = self.llm.is_ollama_available()
+                    doc_count = len(self.orchestrator.vector_store.list_documents())
+                    web_on = self.web_enabled_var.get()
+
+                    # Only post pure non-blocking widget property updates to UI thread
+                    self.after(0, lambda on=is_online, sim=is_sim, llm_ok=ollama_ok, docs=doc_count, web=web_on:
+                               self._apply_status_updates(on, sim, llm_ok, docs, web))
                 except Exception:
-                    break
+                    pass
+                time.sleep(3.0)
 
         t = threading.Thread(target=poll, daemon=True)
         t.start()
 
+    def _apply_status_updates(self, is_online: bool, is_sim: bool, ollama_ok: bool, doc_count: int, web_on: bool):
+        """Pure GUI update (0ms latency, zero blocking I/O) executed on Tkinter thread."""
+        try:
+            if is_online:
+                self.net_badge.config(text="● ONLINE", bg="#10b981", fg="#ffffff")
+            elif is_sim:
+                self.net_badge.config(text="● SIM OFFLINE", bg="#ef4444", fg="#ffffff")
+            else:
+                self.net_badge.config(text="● OFFLINE", bg="#ef4444", fg="#ffffff")
+
+            # Update button text
+            if is_sim:
+                self.btn_toggle_offline.config(text="🌐 Disable Simulated Offline", bg="#f38ba8", fg="#11111b")
+            else:
+                self.btn_toggle_offline.config(text="🌐 Force Simulated Offline", bg="#45475a", fg="#cdd6f4")
+
+            # LLM badge
+            if ollama_ok:
+                self.engine_badge.config(text=f"⚡ {self.llm.model}", bg="#89b4fa", fg="#11111b")
+            else:
+                self.engine_badge.config(text="🔍 Local Extractive", bg="#313244", fg="#a6adc8")
+
+            # Web Search badge
+            if web_on and is_online:
+                self.web_badge.config(text="🌐 Web: ACTIVE", bg="#a6e3a1", fg="#11111b")
+            elif web_on and not is_online:
+                self.web_badge.config(text="🌐 Web: OFFLINE", bg="#45475a", fg="#fab387")
+            else:
+                self.web_badge.config(text="🌐 Web: DISABLED", bg="#313244", fg="#6c7086")
+
+            # Document count badge
+            self.docs_badge.config(text=f"📄 {doc_count} Docs")
+        except Exception:
+            pass
+
     def _update_status_badges(self):
-        """Refreshes status badges on UI thread."""
-        is_online = self.monitor.is_online()
-        is_sim = self.monitor.is_simulated_offline()
-
-        if is_online:
-            self.net_badge.config(text="● ONLINE", bg="#10b981", fg="#ffffff")
-        elif is_sim:
-            self.net_badge.config(text="● SIM OFFLINE", bg="#ef4444", fg="#ffffff")
-        else:
-            self.net_badge.config(text="● OFFLINE", bg="#ef4444", fg="#ffffff")
-
-        # Update button text
-        if is_sim:
-            self.btn_toggle_offline.config(text="🌐 Disable Simulated Offline", bg="#f38ba8", fg="#11111b")
-        else:
-            self.btn_toggle_offline.config(text="🌐 Force Simulated Offline", bg="#45475a", fg="#cdd6f4")
-
-        # LLM badge
-        if self.llm.is_ollama_available():
-            self.engine_badge.config(text="⚡ Ollama", bg="#89b4fa", fg="#11111b")
-        else:
-            self.engine_badge.config(text="🔍 Local Extractive", bg="#313244", fg="#a6adc8")
-
-        # Web Search badge
-        if self.web_enabled_var.get() and is_online:
-            self.web_badge.config(text="🌐 Web: ACTIVE", bg="#a6e3a1", fg="#11111b")
-        elif self.web_enabled_var.get() and not is_online:
-            self.web_badge.config(text="🌐 Web: OFFLINE", bg="#45475a", fg="#fab387")
-        else:
-            self.web_badge.config(text="🌐 Web: DISABLED", bg="#313244", fg="#6c7086")
-
-        # Document count badge
-        doc_count = len(self.orchestrator.vector_store.list_documents())
-        self.docs_badge.config(text=f"📄 {doc_count} Docs")
+        """Trigger immediate background status check without blocking UI."""
+        def run():
+            try:
+                is_online = self.monitor.is_online()
+                is_sim = self.monitor.is_simulated_offline()
+                ollama_ok = self.llm.is_ollama_available()
+                doc_count = len(self.orchestrator.vector_store.list_documents())
+                web_on = self.web_enabled_var.get()
+                self.after(0, lambda on=is_online, sim=is_sim, llm_ok=ollama_ok, docs=doc_count, web=web_on:
+                           self._apply_status_updates(on, sim, llm_ok, docs, web))
+            except Exception:
+                pass
+        threading.Thread(target=run, daemon=True).start()
 
     def _on_toggle_web_clicked(self):
         curr = self.web_enabled_var.get()
@@ -741,11 +776,8 @@ def main():
     print("=" * 65, flush=True)
     print("  [*] Initializing local models, vector DB, and GUI...", flush=True)
     app = OfflineMindGUI()
-    # Ensure window is raised to foreground on Windows desktop
     try:
         app.lift()
-        app.attributes("-topmost", True)
-        app.after_idle(app.attributes, "-topmost", False)
         app.focus_force()
     except Exception:
         pass
