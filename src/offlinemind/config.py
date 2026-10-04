@@ -41,7 +41,7 @@ MAX_BACKUP_RETENTION: int = int(os.getenv("OFFLINEMIND_MAX_BACKUPS", "10"))
 
 # LLM / Ollama Settings
 OLLAMA_BASE_URL: str = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
-OLLAMA_MODEL: str = os.getenv("OLLAMA_MODEL", "phi3:mini")
+OLLAMA_MODEL: str = os.getenv("OLLAMA_MODEL", "llama3.2:1b")
 OLLAMA_TIMEOUT_SEC: float = float(os.getenv("OLLAMA_TIMEOUT", "15.0"))
 
 # Mock Server Settings (for local demo & test)

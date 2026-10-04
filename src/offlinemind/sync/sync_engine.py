@@ -195,8 +195,20 @@ class SyncEngine:
                     error_message=f"Corrupted or invalid JSON payload: {e}",
                 )
             )
+        except requests.exceptions.ConnectionError:
+            logger.info("Sync endpoint unreachable at %s (target server offline).", source_url)
+            return self._record_sync_log(
+                SyncResult(
+                    sync_id=sync_id,
+                    source_url=source_url,
+                    status="FAILED",
+                    start_time=start_time,
+                    end_time=get_current_iso_time(),
+                    error_message=f"Target server at {source_url} is offline or unreachable.",
+                )
+            )
         except requests.exceptions.RequestException as e:
-            logger.error("Network error during sync with %s: %s", source_url, e)
+            logger.warning("Network error during sync with %s: %s", source_url, e)
             return self._record_sync_log(
                 SyncResult(
                     sync_id=sync_id,
