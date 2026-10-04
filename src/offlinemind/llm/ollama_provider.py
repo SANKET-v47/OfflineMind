@@ -77,11 +77,13 @@ class OllamaProvider(LLMProvider):
         **kwargs: Any,
     ) -> str:
         """Executes non-streaming generation."""
+        opts = {"temperature": temperature, "top_p": 0.9, "repeat_penalty": 1.15}
+        opts.update(kwargs)
         payload = {
             "model": self.model_name,
             "prompt": prompt,
             "stream": False,
-            "options": {"temperature": temperature, "top_p": 0.9},
+            "options": opts,
         }
         if system_prompt:
             payload["system"] = system_prompt
@@ -99,11 +101,13 @@ class OllamaProvider(LLMProvider):
         **kwargs: Any,
     ) -> Iterator[str]:
         """Streams generated tokens in real time directly from Ollama."""
+        opts = {"temperature": temperature, "top_p": 0.9, "repeat_penalty": 1.15}
+        opts.update(kwargs)
         payload = {
             "model": self.model_name,
             "prompt": prompt,
             "stream": True,
-            "options": {"temperature": temperature, "top_p": 0.9},
+            "options": opts,
         }
         if system_prompt:
             payload["system"] = system_prompt

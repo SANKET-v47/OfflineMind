@@ -135,12 +135,16 @@ class AssistantOrchestrator:
                 if facts_list:
                     verified_facts_str = "\n".join(facts_list)
 
-        # 8. Build Prompt for Local LLM
+        # 8. Build Prompt for Local LLM (ChatGPT / Claude / Gemini Persona & Direct Style)
         system_prompt = (
-            "You are a helpful, private, offline-first personal AI assistant running locally on Windows. "
-            "Prioritize truthfulness, clarity, and precision. "
-            "If retrieved web information or document context is provided below, synthesize your answer using those facts and cite them. "
-            "Never pretend to have live information if internet access is offline."
+            "You are OfflineMind, a highly intelligent, direct, and concise personal AI assistant (like ChatGPT, Claude, and Gemini).\n\n"
+            "Communication Rules:\n"
+            "1. Be direct, clear, and focused on the key facts. Answer the user's question directly in the very first sentence.\n"
+            "2. Give short, high-value, and important answers. Avoid rambling, repeating the question, or unnecessary filler words.\n"
+            "3. Use clean formatting: bullet points for lists, bolding for key terms, and short paragraphs.\n"
+            "4. Only provide long explanations if the user explicitly asks to 'explain in detail', 'write code', 'write an essay', or elaborate.\n"
+            "5. If document context or web search results are provided below, synthesize only the most relevant facts directly.\n"
+            "6. Never pretend to have real-time information if offline."
         )
 
         user_prompt_sections = []
@@ -155,7 +159,17 @@ class AssistantOrchestrator:
         if long_term_mem:
             user_prompt_sections.append(f"USER PROFILE FACTS:\n{json.dumps(long_term_mem)}")
 
-        user_prompt_sections.append(f"QUESTION: {clean_q}\n\nANSWER:")
+        recent_turns = self.memory_mgr.get_conversation_context(limit=4)
+        if len(recent_turns) > 1:
+            history_lines = [
+                f"{t.get('role', 'user').capitalize()}: {t.get('content', '')}"
+                if isinstance(t, dict) else f"{t.role.capitalize()}: {t.content}"
+                for t in recent_turns[:-1]
+            ]
+            if history_lines:
+                user_prompt_sections.append("RECENT CONVERSATION:\n" + "\n".join(history_lines))
+
+        user_prompt_sections.append(f"QUESTION: {clean_q}\n\nANSWER (Concise & Direct):")
         final_prompt = "\n\n".join(user_prompt_sections)
 
         # 9. Stream from Local LLM Provider
@@ -165,7 +179,9 @@ class AssistantOrchestrator:
                 for token in self.model_mgr.active_provider.stream_generate(
                     prompt=final_prompt,
                     system_prompt=system_prompt,
-                    temperature=0.3 if (web_context or rag_context or verified_facts_str) else 0.7,
+                    temperature=0.3 if (web_context or rag_context or verified_facts_str) else 0.45,
+                    num_predict=450,
+                    repeat_penalty=1.15,
                 ):
                     full_response_text += token
                     yield token

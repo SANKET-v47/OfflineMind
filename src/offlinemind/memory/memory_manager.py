@@ -62,10 +62,11 @@ class MemoryManager:
         if len(self.short_term) > self.max_short_term_turns * 2:
             self.short_term = self.short_term[-self.max_short_term_turns * 2:]
 
-    def get_conversation_context(self) -> List[Dict[str, str]]:
+    def get_conversation_context(self, limit: Optional[int] = None) -> List[Dict[str, str]]:
         if not self.is_enabled:
             return []
-        return [m.to_dict() for m in self.short_term]
+        items = self.short_term[-limit:] if limit else self.short_term
+        return [m.to_dict() for m in items]
 
     def clear_short_term(self) -> None:
         self.short_term.clear()
